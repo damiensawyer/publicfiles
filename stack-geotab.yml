@@ -1,0 +1,633 @@
+Parameters:
+  BootstrapVersion:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /cdk-bootstrap/hnb659fds/version
+    Description: Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]
+Rules:
+  CheckBootstrapVersion:
+    Assertions:
+      - Assert:
+          Fn::Not:
+            - Fn::Contains:
+                - - "1"
+                  - "2"
+                  - "3"
+                  - "4"
+                  - "5"
+                - Ref: BootstrapVersion
+        AssertDescription: CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI.
+Resources:
+  GeotabFeedQueueGeotabFeedQueueDLQ68583F06:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 300
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Metadata:
+      aws:cdk:path: Geotab/GeotabFeedQueue/GeotabFeedQueue_DLQ/Resource
+  GeotabFeedQueueGeotabFeedQueueQueue21292C17:
+    Type: AWS::SQS::Queue
+    Properties:
+      RedrivePolicy:
+        deadLetterTargetArn:
+          Fn::GetAtt:
+            - GeotabFeedQueueGeotabFeedQueueDLQ68583F06
+            - Arn
+        maxReceiveCount: 100
+      VisibilityTimeout: 300
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Metadata:
+      aws:cdk:path: Geotab/GeotabFeedQueue/GeotabFeedQueue_Queue/Resource
+  GeotabDdbTable16A18E32:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      ProvisionedThroughput:
+        ReadCapacityUnits: 15
+        WriteCapacityUnits: 10
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Metadata:
+      aws:cdk:path: Geotab/GeotabDdbTable/Resource
+  GeotabDdbTableWriteScalingTargetB2E07B39:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 50
+      MinCapacity: 10
+      ResourceId:
+        Fn::Join:
+          - ""
+          - - table/
+            - Ref: GeotabDdbTable16A18E32
+      RoleARN:
+        Fn::Join:
+          - ""
+          - - "arn:aws:iam::"
+            - Ref: AWS::AccountId
+            - :role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable
+      ScalableDimension: dynamodb:table:WriteCapacityUnits
+      ServiceNamespace: dynamodb
+    Metadata:
+      aws:cdk:path: Geotab/GeotabDdbTable/WriteScaling/Target/Resource
+  GeotabDdbTableWriteScalingTargetTracking5BF4B1D7:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: GeotabGeotabDdbTableWriteScalingTargetTracking6D3015FD
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId:
+        Ref: GeotabDdbTableWriteScalingTargetB2E07B39
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBWriteCapacityUtilization
+        TargetValue: 90
+    Metadata:
+      aws:cdk:path: Geotab/GeotabDdbTable/WriteScaling/Target/Tracking/Resource
+  GeotabDdbTableReadScalingTarget380CD30C:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 50
+      MinCapacity: 10
+      ResourceId:
+        Fn::Join:
+          - ""
+          - - table/
+            - Ref: GeotabDdbTable16A18E32
+      RoleARN:
+        Fn::Join:
+          - ""
+          - - "arn:aws:iam::"
+            - Ref: AWS::AccountId
+            - :role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable
+      ScalableDimension: dynamodb:table:ReadCapacityUnits
+      ServiceNamespace: dynamodb
+    Metadata:
+      aws:cdk:path: Geotab/GeotabDdbTable/ReadScaling/Target/Resource
+  GeotabDdbTableReadScalingTargetTrackingAD5A3B3A:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: GeotabGeotabDdbTableReadScalingTargetTracking5420B997
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId:
+        Ref: GeotabDdbTableReadScalingTarget380CD30C
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBReadCapacityUtilization
+        TargetValue: 90
+    Metadata:
+      aws:cdk:path: Geotab/GeotabDdbTable/ReadScaling/Target/Tracking/Resource
+  GeotabFeedBucket3E7F1549:
+    Type: AWS::S3::Bucket
+    Properties:
+      Tags:
+        - Key: aws-cdk:auto-delete-objects
+          Value: "true"
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Metadata:
+      aws:cdk:path: Geotab/GeotabFeedBucket/Resource
+  GeotabFeedBucketPolicy928A103D:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket:
+        Ref: GeotabFeedBucket3E7F1549
+      PolicyDocument:
+        Statement:
+          - Action:
+              - s3:DeleteObject*
+              - s3:GetBucket*
+              - s3:List*
+            Effect: Allow
+            Principal:
+              AWS:
+                Fn::GetAtt:
+                  - CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092
+                  - Arn
+            Resource:
+              - Fn::GetAtt:
+                  - GeotabFeedBucket3E7F1549
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - GeotabFeedBucket3E7F1549
+                        - Arn
+                    - /*
+        Version: "2012-10-17"
+    Metadata:
+      aws:cdk:path: Geotab/GeotabFeedBucket/Policy/Resource
+  GeotabFeedBucketAutoDeleteObjectsCustomResourceA5875979:
+    Type: Custom::S3AutoDeleteObjects
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+          - CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F
+          - Arn
+      BucketName:
+        Ref: GeotabFeedBucket3E7F1549
+    DependsOn:
+      - GeotabFeedBucketPolicy928A103D
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Metadata:
+      aws:cdk:path: Geotab/GeotabFeedBucket/AutoDeleteObjectsCustomResource/Default
+  CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+      ManagedPolicyArns:
+        - Fn::Sub: arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+    Metadata:
+      aws:cdk:path: Geotab/Custom::S3AutoDeleteObjectsCustomResourceProvider/Role
+  CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket:
+          Fn::Sub: cdk-hnb659fds-assets-${AWS::AccountId}-us-east-1
+        S3Key: 3f51abb709b8e65167a45aeed02bab11540603d909005d7148230ba5ce6c74d7.zip
+      Timeout: 900
+      MemorySize: 128
+      Handler: __entrypoint__.handler
+      Role:
+        Fn::GetAtt:
+          - CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092
+          - Arn
+      Runtime: nodejs14.x
+      Description:
+        Fn::Join:
+          - ""
+          - - "Lambda function for auto-deleting objects in "
+            - Ref: GeotabFeedBucket3E7F1549
+            - " S3 bucket."
+    DependsOn:
+      - CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092
+    Metadata:
+      aws:cdk:path: Geotab/Custom::S3AutoDeleteObjectsCustomResourceProvider/Handler
+      aws:asset:path: asset.3f51abb709b8e65167a45aeed02bab11540603d909005d7148230ba5ce6c74d7
+      aws:asset:property: Code
+  GeotabWatchdogLambdaServiceRole8BE4E93D:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+    Metadata:
+      aws:cdk:path: Geotab/GeotabWatchdogLambda/GeotabWatchdogLambda/GeotabWatchdogLambda/ServiceRole/Resource
+  GeotabWatchdogLambdaServiceRoleDefaultPolicyE758AA97:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - s3:Abort*
+              - s3:DeleteObject*
+              - s3:GetBucket*
+              - s3:GetObject*
+              - s3:List*
+              - s3:PutObject
+              - s3:PutObjectLegalHold
+              - s3:PutObjectRetention
+              - s3:PutObjectTagging
+              - s3:PutObjectVersionTagging
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - GeotabFeedBucket3E7F1549
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - GeotabFeedBucket3E7F1549
+                        - Arn
+                    - /*
+          - Action:
+              - dynamodb:BatchGetItem
+              - dynamodb:BatchWriteItem
+              - dynamodb:ConditionCheckItem
+              - dynamodb:DeleteItem
+              - dynamodb:DescribeTable
+              - dynamodb:GetItem
+              - dynamodb:GetRecords
+              - dynamodb:GetShardIterator
+              - dynamodb:PutItem
+              - dynamodb:Query
+              - dynamodb:Scan
+              - dynamodb:UpdateItem
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - GeotabDdbTable16A18E32
+                  - Arn
+              - Ref: AWS::NoValue
+          - Action:
+              - sqs:GetQueueAttributes
+              - sqs:GetQueueUrl
+              - sqs:SendMessage
+            Effect: Allow
+            Resource:
+              Fn::GetAtt:
+                - GeotabFeedQueueGeotabFeedQueueQueue21292C17
+                - Arn
+        Version: "2012-10-17"
+      PolicyName: GeotabWatchdogLambdaServiceRoleDefaultPolicyE758AA97
+      Roles:
+        - Ref: GeotabWatchdogLambdaServiceRole8BE4E93D
+    Metadata:
+      aws:cdk:path: Geotab/GeotabWatchdogLambda/GeotabWatchdogLambda/GeotabWatchdogLambda/ServiceRole/DefaultPolicy/Resource
+  GeotabWatchdogLambdaA6A71FBB:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket:
+          Fn::Sub: cdk-hnb659fds-assets-${AWS::AccountId}-us-east-1
+        S3Key: b9821d01ff129b429520fc7f54a627cdb7e5805d5fc565940e1c5b1cabf16fd9.zip
+      Role:
+        Fn::GetAtt:
+          - GeotabWatchdogLambdaServiceRole8BE4E93D
+          - Arn
+      Environment:
+        Variables:
+          DDB_TABLE_NAME:
+            Ref: GeotabDdbTable16A18E32
+          S3_BUCKET_NAME:
+            Ref: GeotabFeedBucket3E7F1549
+          SQS_QUEUE_URL:
+            Ref: GeotabFeedQueueGeotabFeedQueueQueue21292C17
+          AWS_NODEJS_CONNECTION_REUSE_ENABLED: "1"
+      Handler: index.handler
+      MemorySize: 4096
+      ReservedConcurrentExecutions: 1
+      Runtime: nodejs18.x
+      Timeout: 60
+    DependsOn:
+      - GeotabWatchdogLambdaServiceRoleDefaultPolicyE758AA97
+      - GeotabWatchdogLambdaServiceRole8BE4E93D
+    Metadata:
+      aws:cdk:path: Geotab/GeotabWatchdogLambda/GeotabWatchdogLambda/GeotabWatchdogLambda/Resource
+      aws:asset:path: asset.b9821d01ff129b429520fc7f54a627cdb7e5805d5fc565940e1c5b1cabf16fd9
+      aws:asset:is-bundled: true
+      aws:asset:property: Code
+  GeotabWatchdogLambdaEventInvokeConfig05DD25D1:
+    Type: AWS::Lambda::EventInvokeConfig
+    Properties:
+      FunctionName:
+        Ref: GeotabWatchdogLambdaA6A71FBB
+      Qualifier: $LATEST
+      MaximumRetryAttempts: 0
+    Metadata:
+      aws:cdk:path: Geotab/GeotabWatchdogLambda/GeotabWatchdogLambda/GeotabWatchdogLambda/EventInvokeConfig/Resource
+  GeotabWatchdogLambdaDamienFirstRule15995F13:
+    Type: AWS::Events::Rule
+    Properties:
+      ScheduleExpression: rate(1 minute)
+      State: ENABLED
+      Targets:
+        - Arn:
+            Fn::GetAtt:
+              - GeotabWatchdogLambdaA6A71FBB
+              - Arn
+          Id: Target0
+    Metadata:
+      aws:cdk:path: Geotab/GeotabWatchdogLambda/Damien First Rule/Resource
+  GeotabWatchdogLambdaDamienFirstRuleAllowEventRuleGeotabGeotabWatchdogLambda022660809A509356:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - GeotabWatchdogLambdaA6A71FBB
+          - Arn
+      Principal: events.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+          - GeotabWatchdogLambdaDamienFirstRule15995F13
+          - Arn
+    Metadata:
+      aws:cdk:path: Geotab/GeotabWatchdogLambda/Damien First Rule/AllowEventRuleGeotabGeotabWatchdogLambda02266080
+  GeotabSessionManagerLambdaGeotabSessionManagerLambdaqueueGeotabSessionManagerLambdaqueueDLQ2185129E:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 300
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Metadata:
+      aws:cdk:path: Geotab/GeotabSessionManagerLambda/GeotabSessionManagerLambda_queue/GeotabSessionManagerLambda_queue_DLQ/Resource
+  GeotabSessionManagerLambdaGeotabSessionManagerLambdaqueueGeotabSessionManagerLambdaqueueQueue5EF1CA4B:
+    Type: AWS::SQS::Queue
+    Properties:
+      RedrivePolicy:
+        deadLetterTargetArn:
+          Fn::GetAtt:
+            - GeotabSessionManagerLambdaGeotabSessionManagerLambdaqueueGeotabSessionManagerLambdaqueueDLQ2185129E
+            - Arn
+        maxReceiveCount: 100
+      VisibilityTimeout: 300
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Metadata:
+      aws:cdk:path: Geotab/GeotabSessionManagerLambda/GeotabSessionManagerLambda_queue/GeotabSessionManagerLambda_queue_Queue/Resource
+  GeotabSessionManagerLambdaServiceRoleA0923A5C:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+    Metadata:
+      aws:cdk:path: Geotab/GeotabSessionManagerLambda/GeotabSessionManagerLambda/GeotabSessionManagerLambda/ServiceRole/Resource
+  GeotabSessionManagerLambdaServiceRoleDefaultPolicy4D421561:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - sqs:ChangeMessageVisibility
+              - sqs:DeleteMessage
+              - sqs:GetQueueAttributes
+              - sqs:GetQueueUrl
+              - sqs:ReceiveMessage
+            Effect: Allow
+            Resource:
+              Fn::GetAtt:
+                - GeotabSessionManagerLambdaGeotabSessionManagerLambdaqueueGeotabSessionManagerLambdaqueueQueue5EF1CA4B
+                - Arn
+        Version: "2012-10-17"
+      PolicyName: GeotabSessionManagerLambdaServiceRoleDefaultPolicy4D421561
+      Roles:
+        - Ref: GeotabSessionManagerLambdaServiceRoleA0923A5C
+    Metadata:
+      aws:cdk:path: Geotab/GeotabSessionManagerLambda/GeotabSessionManagerLambda/GeotabSessionManagerLambda/ServiceRole/DefaultPolicy/Resource
+  GeotabSessionManagerLambda71B64292:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket:
+          Fn::Sub: cdk-hnb659fds-assets-${AWS::AccountId}-us-east-1
+        S3Key: a04c448672b6acdb2be0958ffc5f312932483c4c6a72ab65ae59ba2711f70d8b.zip
+      Role:
+        Fn::GetAtt:
+          - GeotabSessionManagerLambdaServiceRoleA0923A5C
+          - Arn
+      Environment:
+        Variables:
+          DDB_TABLE_NAME:
+            Ref: GeotabDdbTable16A18E32
+          AWS_NODEJS_CONNECTION_REUSE_ENABLED: "1"
+      Handler: index.handler
+      MemorySize: 4096
+      ReservedConcurrentExecutions: 1
+      Runtime: nodejs18.x
+      Timeout: 5
+    DependsOn:
+      - GeotabSessionManagerLambdaServiceRoleDefaultPolicy4D421561
+      - GeotabSessionManagerLambdaServiceRoleA0923A5C
+    Metadata:
+      aws:cdk:path: Geotab/GeotabSessionManagerLambda/GeotabSessionManagerLambda/GeotabSessionManagerLambda/Resource
+      aws:asset:path: asset.a04c448672b6acdb2be0958ffc5f312932483c4c6a72ab65ae59ba2711f70d8b
+      aws:asset:is-bundled: true
+      aws:asset:property: Code
+  GeotabSessionManagerLambdaEventInvokeConfig3B2A1D9D:
+    Type: AWS::Lambda::EventInvokeConfig
+    Properties:
+      FunctionName:
+        Ref: GeotabSessionManagerLambda71B64292
+      Qualifier: $LATEST
+      MaximumRetryAttempts: 0
+    Metadata:
+      aws:cdk:path: Geotab/GeotabSessionManagerLambda/GeotabSessionManagerLambda/GeotabSessionManagerLambda/EventInvokeConfig/Resource
+  GeotabSessionManagerLambdaSqsEventSourceGeotabGeotabSessionManagerLambdaGeotabSessionManagerLambdaqueueGeotabSessionManagerLambdaqueueQueueCE962C45F25782F4:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      FunctionName:
+        Ref: GeotabSessionManagerLambda71B64292
+      BatchSize: 1
+      EventSourceArn:
+        Fn::GetAtt:
+          - GeotabSessionManagerLambdaGeotabSessionManagerLambdaqueueGeotabSessionManagerLambdaqueueQueue5EF1CA4B
+          - Arn
+    Metadata:
+      aws:cdk:path: Geotab/GeotabSessionManagerLambda/GeotabSessionManagerLambda/GeotabSessionManagerLambda/SqsEventSource:GeotabGeotabSessionManagerLambdaGeotabSessionManagerLambdaqueueGeotabSessionManagerLambdaqueueQueueCE962C45/Resource
+  FeedAccessLambdaServiceRole16DC7B8A:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+    Metadata:
+      aws:cdk:path: Geotab/FeedAccessLambda/FeedAccessLambda/ServiceRole/Resource
+  FeedAccessLambdaServiceRoleDefaultPolicyAAB7848E:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - sqs:ChangeMessageVisibility
+              - sqs:DeleteMessage
+              - sqs:GetQueueAttributes
+              - sqs:GetQueueUrl
+              - sqs:ReceiveMessage
+              - sqs:SendMessage
+            Effect: Allow
+            Resource:
+              Fn::GetAtt:
+                - GeotabFeedQueueGeotabFeedQueueQueue21292C17
+                - Arn
+          - Action:
+              - sqs:GetQueueAttributes
+              - sqs:GetQueueUrl
+              - sqs:SendMessage
+            Effect: Allow
+            Resource:
+              Fn::GetAtt:
+                - GeotabSessionManagerLambdaGeotabSessionManagerLambdaqueueGeotabSessionManagerLambdaqueueQueue5EF1CA4B
+                - Arn
+          - Action:
+              - dynamodb:BatchGetItem
+              - dynamodb:BatchWriteItem
+              - dynamodb:ConditionCheckItem
+              - dynamodb:DeleteItem
+              - dynamodb:DescribeTable
+              - dynamodb:GetItem
+              - dynamodb:GetRecords
+              - dynamodb:GetShardIterator
+              - dynamodb:PutItem
+              - dynamodb:Query
+              - dynamodb:Scan
+              - dynamodb:UpdateItem
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - GeotabDdbTable16A18E32
+                  - Arn
+              - Ref: AWS::NoValue
+          - Action:
+              - s3:Abort*
+              - s3:DeleteObject*
+              - s3:GetBucket*
+              - s3:GetObject*
+              - s3:List*
+              - s3:PutObject
+              - s3:PutObjectLegalHold
+              - s3:PutObjectRetention
+              - s3:PutObjectTagging
+              - s3:PutObjectVersionTagging
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - GeotabFeedBucket3E7F1549
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - GeotabFeedBucket3E7F1549
+                        - Arn
+                    - /*
+        Version: "2012-10-17"
+      PolicyName: FeedAccessLambdaServiceRoleDefaultPolicyAAB7848E
+      Roles:
+        - Ref: FeedAccessLambdaServiceRole16DC7B8A
+    Metadata:
+      aws:cdk:path: Geotab/FeedAccessLambda/FeedAccessLambda/ServiceRole/DefaultPolicy/Resource
+  FeedAccessLambda0159E2E9:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket:
+          Fn::Sub: cdk-hnb659fds-assets-${AWS::AccountId}-us-east-1
+        S3Key: 93f180449861e5f018e815a56f3452ee45142bf79df7c7d2b10c05dc19b2d832.zip
+      Role:
+        Fn::GetAtt:
+          - FeedAccessLambdaServiceRole16DC7B8A
+          - Arn
+      Environment:
+        Variables:
+          SQS_QUEUE_URL:
+            Ref: GeotabFeedQueueGeotabFeedQueueQueue21292C17
+          SQS_REFRESH_GEOTAB_SESSION_QUEUE_URL:
+            Ref: GeotabSessionManagerLambdaGeotabSessionManagerLambdaqueueGeotabSessionManagerLambdaqueueQueue5EF1CA4B
+          S3_BUCKET_NAME:
+            Ref: GeotabFeedBucket3E7F1549
+          DDB_TABLE_NAME:
+            Ref: GeotabDdbTable16A18E32
+          AWS_NODEJS_CONNECTION_REUSE_ENABLED: "1"
+      Handler: index.handler
+      MemorySize: 4096
+      ReservedConcurrentExecutions: 1
+      Runtime: nodejs18.x
+      Timeout: 5
+    DependsOn:
+      - FeedAccessLambdaServiceRoleDefaultPolicyAAB7848E
+      - FeedAccessLambdaServiceRole16DC7B8A
+    Metadata:
+      aws:cdk:path: Geotab/FeedAccessLambda/FeedAccessLambda/Resource
+      aws:asset:path: asset.93f180449861e5f018e815a56f3452ee45142bf79df7c7d2b10c05dc19b2d832
+      aws:asset:is-bundled: true
+      aws:asset:property: Code
+  FeedAccessLambdaEventInvokeConfig700780D9:
+    Type: AWS::Lambda::EventInvokeConfig
+    Properties:
+      FunctionName:
+        Ref: FeedAccessLambda0159E2E9
+      Qualifier: $LATEST
+      MaximumRetryAttempts: 0
+    Metadata:
+      aws:cdk:path: Geotab/FeedAccessLambda/FeedAccessLambda/EventInvokeConfig/Resource
+  FeedAccessLambdaSqsEventSourceGeotabGeotabFeedQueueGeotabFeedQueueQueueAF94DD1815B3295F:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      FunctionName:
+        Ref: FeedAccessLambda0159E2E9
+      BatchSize: 1
+      EventSourceArn:
+        Fn::GetAtt:
+          - GeotabFeedQueueGeotabFeedQueueQueue21292C17
+          - Arn
+    Metadata:
+      aws:cdk:path: Geotab/FeedAccessLambda/FeedAccessLambda/SqsEventSource:GeotabGeotabFeedQueueGeotabFeedQueueQueueAF94DD18/Resource
+  CDKMetadata:
+    Type: AWS::CDK::Metadata
+    Properties:
+      Analytics: v2:deflate64:H4sIAAAAAAAA/21SwW7DIAz9lt0p6zap967apB02dUnvFSFuRJNAhyFTFfHvM9Am6lQp0rMfz8825Jmvlnz5IH5xIet20amKj6UTsmVE7Uf8QT5+e/DANgedgsDqsxa9qUm5E1WXTlIQmDidOiWFU0YL7wxK0Snd8PFVIJSURNXaOasq74BdmZ2wDbho84/JsLM0DtmU2W1rqMX5qp6IwPCFGnnZZqtLlGGuuclzEocLrBN9VYu9NjUckX8lePdaxl2YEj0fC5N3TTg7zu33AhEc8nWEiyEfSTL5vA2g3YceTAsbow+qiQZ3yS3YXiFORaXxVsInXTBtPFXdsIFB5OjBCn+ZlDAEVgAmHdt4dKafU1LcP9paM6gaLEur0P/QJP94OfyIj8PTitO3fDiiUgvrtVM98CLjH788XShSAgAA
+    Metadata:
+      aws:cdk:path: Geotab/CDKMetadata/Default
