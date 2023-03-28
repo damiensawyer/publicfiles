@@ -1,21 +1,15 @@
 Parameters:
-  BootstrapVersion:
-    Type: AWS::SSM::Parameter::Value<String>
-    Default: /cdk-bootstrap/hnb659fds/version
-    Description: Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]
-Rules:
-  CheckBootstrapVersion:
-    Assertions:
-      - Assert:
-          Fn::Not:
-            - Fn::Contains:
-                - - "1"
-                  - "2"
-                  - "3"
-                  - "4"
-                  - "5"
-                - Ref: BootstrapVersion
-        AssertDescription: CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI.
+  ServiceName:
+    Type: String
+    Default: reporting
+  CodeBucketName:
+    Type: String
+    Default: backend-code
+    Description: "[ParamOverride] The bucket name of source code."
+  CodeObjectKey:
+    Type: String
+    Default: release.zip
+    Description: "[ParamOverride] The object key of source code."
 Resources:
   GeotabFeedQueueGeotabFeedQueueDLQ68583F06:
     Type: AWS::SQS::Queue
@@ -143,11 +137,6 @@ Resources:
               - s3:GetBucket*
               - s3:List*
             Effect: Allow
-            Principal:
-              AWS:
-                Fn::GetAtt:
-                  - CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092
-                  - Arn
             Resource:
               - Fn::GetAtt:
                   - GeotabFeedBucket3E7F1549
@@ -161,62 +150,6 @@ Resources:
         Version: "2012-10-17"
     Metadata:
       aws:cdk:path: Geotab/GeotabFeedBucket/Policy/Resource
-  GeotabFeedBucketAutoDeleteObjectsCustomResourceA5875979:
-    Type: Custom::S3AutoDeleteObjects
-    Properties:
-      ServiceToken:
-        Fn::GetAtt:
-          - CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F
-          - Arn
-      BucketName:
-        Ref: GeotabFeedBucket3E7F1549
-    DependsOn:
-      - GeotabFeedBucketPolicy928A103D
-    UpdateReplacePolicy: Delete
-    DeletionPolicy: Delete
-    Metadata:
-      aws:cdk:path: Geotab/GeotabFeedBucket/AutoDeleteObjectsCustomResource/Default
-  CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Action: sts:AssumeRole
-            Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-      ManagedPolicyArns:
-        - Fn::Sub: arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-    Metadata:
-      aws:cdk:path: Geotab/Custom::S3AutoDeleteObjectsCustomResourceProvider/Role
-  CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F:
-    Type: AWS::Lambda::Function
-    Properties:
-      Code:
-        S3Bucket:
-          Fn::Sub: cdk-hnb659fds-assets-${AWS::AccountId}-us-east-1
-        S3Key: 3f51abb709b8e65167a45aeed02bab11540603d909005d7148230ba5ce6c74d7.zip
-      Timeout: 900
-      MemorySize: 128
-      Handler: __entrypoint__.handler
-      Role:
-        Fn::GetAtt:
-          - CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092
-          - Arn
-      Runtime: nodejs14.x
-      Description:
-        Fn::Join:
-          - ""
-          - - "Lambda function for auto-deleting objects in "
-            - Ref: GeotabFeedBucket3E7F1549
-            - " S3 bucket."
-    DependsOn:
-      - CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092
-    Metadata:
-      aws:cdk:path: Geotab/Custom::S3AutoDeleteObjectsCustomResourceProvider/Handler
-      aws:asset:path: asset.3f51abb709b8e65167a45aeed02bab11540603d909005d7148230ba5ce6c74d7
-      aws:asset:property: Code
   GeotabWatchdogLambdaServiceRole8BE4E93D:
     Type: AWS::IAM::Role
     Properties:
@@ -300,9 +233,8 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       Code:
-        S3Bucket:
-          Fn::Sub: cdk-hnb659fds-assets-${AWS::AccountId}-us-east-1
-        S3Key: b9821d01ff129b429520fc7f54a627cdb7e5805d5fc565940e1c5b1cabf16fd9.zip
+        S3Bucket: !Ref CodeBucketName
+        S3Key: !Ref CodeObjectKey
       Role:
         Fn::GetAtt:
           - GeotabWatchdogLambdaServiceRole8BE4E93D
@@ -316,7 +248,7 @@ Resources:
           SQS_QUEUE_URL:
             Ref: GeotabFeedQueueGeotabFeedQueueQueue21292C17
           AWS_NODEJS_CONNECTION_REUSE_ENABLED: "1"
-      Handler: index.handler
+      Handler: geotab_ts_dist/resources/geotabFeed/geotabWatchdog.handler
       MemorySize: 4096
       ReservedConcurrentExecutions: 1
       Runtime: nodejs18.x
@@ -351,8 +283,8 @@ Resources:
           Id: Target0
     Metadata:
       aws:cdk:path: Geotab/GeotabWatchdogLambda/Damien First Rule/Resource
-  GeotabWatchdogLambdaDamienFirstRuleAllowEventRuleGeotabGeotabWatchdogLambda022660809A509356:
-    Type: AWS::Lambda::Permission
+  ? GeotabWatchdogLambdaDamienFirstRuleAllowEventRuleGeotabGeotabWatchdogLambda022660809A509356
+  : Type: AWS::Lambda::Permission
     Properties:
       Action: lambda:InvokeFunction
       FunctionName:
@@ -366,16 +298,16 @@ Resources:
           - Arn
     Metadata:
       aws:cdk:path: Geotab/GeotabWatchdogLambda/Damien First Rule/AllowEventRuleGeotabGeotabWatchdogLambda02266080
-  GeotabSessionManagerLambdaGeotabSessionManagerLambdaqueueGeotabSessionManagerLambdaqueueDLQ2185129E:
-    Type: AWS::SQS::Queue
+  ? GeotabSessionManagerLambdaGeotabSessionManagerLambdaqueueGeotabSessionManagerLambdaqueueDLQ2185129E
+  : Type: AWS::SQS::Queue
     Properties:
       VisibilityTimeout: 300
     UpdateReplacePolicy: Delete
     DeletionPolicy: Delete
     Metadata:
       aws:cdk:path: Geotab/GeotabSessionManagerLambda/GeotabSessionManagerLambda_queue/GeotabSessionManagerLambda_queue_DLQ/Resource
-  GeotabSessionManagerLambdaGeotabSessionManagerLambdaqueueGeotabSessionManagerLambdaqueueQueue5EF1CA4B:
-    Type: AWS::SQS::Queue
+  ? GeotabSessionManagerLambdaGeotabSessionManagerLambdaqueueGeotabSessionManagerLambdaqueueQueue5EF1CA4B
+  : Type: AWS::SQS::Queue
     Properties:
       RedrivePolicy:
         deadLetterTargetArn:
@@ -432,9 +364,8 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       Code:
-        S3Bucket:
-          Fn::Sub: cdk-hnb659fds-assets-${AWS::AccountId}-us-east-1
-        S3Key: a04c448672b6acdb2be0958ffc5f312932483c4c6a72ab65ae59ba2711f70d8b.zip
+        S3Bucket: !Ref CodeBucketName
+        S3Key: !Ref CodeObjectKey
       Role:
         Fn::GetAtt:
           - GeotabSessionManagerLambdaServiceRoleA0923A5C
@@ -444,7 +375,7 @@ Resources:
           DDB_TABLE_NAME:
             Ref: GeotabDdbTable16A18E32
           AWS_NODEJS_CONNECTION_REUSE_ENABLED: "1"
-      Handler: index.handler
+      Handler: geotab_ts_dist/resources/geotabFeed/geotabRefreshSessionToken.handler
       MemorySize: 4096
       ReservedConcurrentExecutions: 1
       Runtime: nodejs18.x
@@ -466,8 +397,8 @@ Resources:
       MaximumRetryAttempts: 0
     Metadata:
       aws:cdk:path: Geotab/GeotabSessionManagerLambda/GeotabSessionManagerLambda/GeotabSessionManagerLambda/EventInvokeConfig/Resource
-  GeotabSessionManagerLambdaSqsEventSourceGeotabGeotabSessionManagerLambdaGeotabSessionManagerLambdaqueueGeotabSessionManagerLambdaqueueQueueCE962C45F25782F4:
-    Type: AWS::Lambda::EventSourceMapping
+  ? GeotabSessionManagerLambdaSqsEventSourceGeotabGeotabSessionManagerLambdaGeotabSessionManagerLambdaqueueGeotabSessionManagerLambdaqueueQueueCE962C45F25782F4
+  : Type: AWS::Lambda::EventSourceMapping
     Properties:
       FunctionName:
         Ref: GeotabSessionManagerLambda71B64292
@@ -573,9 +504,8 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       Code:
-        S3Bucket:
-          Fn::Sub: cdk-hnb659fds-assets-${AWS::AccountId}-us-east-1
-        S3Key: 93f180449861e5f018e815a56f3452ee45142bf79df7c7d2b10c05dc19b2d832.zip
+        S3Bucket: !Ref CodeBucketName
+        S3Key: !Ref CodeObjectKey
       Role:
         Fn::GetAtt:
           - FeedAccessLambdaServiceRole16DC7B8A
@@ -591,7 +521,7 @@ Resources:
           DDB_TABLE_NAME:
             Ref: GeotabDdbTable16A18E32
           AWS_NODEJS_CONNECTION_REUSE_ENABLED: "1"
-      Handler: index.handler
+      Handler: geotab_ts_dist/resources/geotabFeed/geotabFeedAccess.handler
       MemorySize: 4096
       ReservedConcurrentExecutions: 1
       Runtime: nodejs18.x
@@ -613,8 +543,8 @@ Resources:
       MaximumRetryAttempts: 0
     Metadata:
       aws:cdk:path: Geotab/FeedAccessLambda/FeedAccessLambda/EventInvokeConfig/Resource
-  FeedAccessLambdaSqsEventSourceGeotabGeotabFeedQueueGeotabFeedQueueQueueAF94DD1815B3295F:
-    Type: AWS::Lambda::EventSourceMapping
+  ? FeedAccessLambdaSqsEventSourceGeotabGeotabFeedQueueGeotabFeedQueueQueueAF94DD1815B3295F
+  : Type: AWS::Lambda::EventSourceMapping
     Properties:
       FunctionName:
         Ref: FeedAccessLambda0159E2E9
