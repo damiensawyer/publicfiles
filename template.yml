@@ -1,0 +1,1515 @@
+# ***************************************************************
+# *                                                             *
+# *  Parameters Section                                         *
+# *                                                             *
+# ***************************************************************
+
+Parameters:
+  CodeBucketName:
+    Type: String
+    Default: backend-code
+    Description: "[ParamOverride] The bucket name of source code."
+  CodeObjectKey:
+    Type: String
+    Default: release.zip
+    Description: "[ParamOverride] The object key of source code."
+  SplitCodeObjectKey:
+    Type: String
+    Default: release.zip
+    Description: "[ParamOverride] The object key of source code."
+  DevCodeObjectKey:
+    Type: String
+    Default: release.zip
+    Description: "[ParamOverride] The object key of source code."
+  TSCodeObjectKey:
+    Type: String
+    Default: release.zip
+    Description: "[ParamOverride] The object key of source code."
+  CodeObjectDotNetCoreKey:
+    Type: String
+    Default: releaseDotNet.zip
+    Description: "[ParamOverride] The object key of .net core source code."
+  DeviceLogBucketName:
+    Type: String
+    Default: device-log
+    Description: The bucket name of device logs.
+  IntegrationServiceBucketName:
+    Type: String
+    Default: integration-service
+    Description: The bucket name of IntegrationServiceBucket
+  IntegrationServiceDeliveryStreamName:
+    Type: String
+    Default: integration-service-deliverystream
+    Description: The Firehose delivery stream name of IntegrationService
+  IntegrationServiceEMSQueueName:
+    Type: String
+    Default: IntegrationServiceEMSQueue
+  MySQLDatabaseName:
+    Type: String
+  EngineVersion:
+    Type: String
+    Default: "5.6"
+  MasterUsername:
+    Type: String
+    Default: root
+  MasterUserPassword:
+    Type: String
+    NoEcho: true
+  OfficeIP:
+    Type: String
+    Default: 202.74.189.34/32
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  SubnetIds:
+    Type: String
+  BastionImageId:
+    Type: AWS::EC2::Image::Id
+    Default: ami-0202f51d204a8428f
+  BastionImageMySQLToolId:
+    Type: AWS::EC2::Image::Id
+    Default: ami-0202f51d204a8428f
+  BastionKeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: EC2 key used to connect to the bastion host
+  BackendInitProjectRole:
+    Type: String
+    Description: ARN of role which invokes init handlers.
+  DomainName:
+    Type: String
+    Description: Domain Name of API GW.
+  RegionalACMCertArn:
+    Type: String
+    Description: ARN of Regional ACM Certificate.
+  UserServiceTableName:
+    Type: String
+    Default: UserServiceStore
+    Description: Name of the user service table.  Used by table resource and as environment setting for many resources
+  UserEventStoreTableName:
+    Type: String
+    Default: UserEventStore
+    Description: Name of the user event store table.  Used by table resource and as environment setting for many resources
+  DomainEventStoreTableName:
+    Type: String
+    Default: DomainEventStore
+  TransactionServiceTableName:
+    Type: String
+    Default: TransactionServiceStore
+  AttachmentServiceTableName:
+    Type: String
+    Default: AttachmentServiceStore
+  WebSocketsEnabled:
+    Type: String
+    Default: false
+  DeliveryEnabled:
+    Type: String
+    Default: false
+  WalletServiceTableName:
+    Type: String
+    Default: WalletServiceStore
+
+Conditions:
+  EnableWebSockets: !Equals [!Ref WebSocketsEnabled, true]
+  EnableDelivery: !Equals [!Ref DeliveryEnabled, true]
+
+Resources:
+  # ***************************************************************
+  # *                                                             *
+  # * This is the basic lambda execution policy.                  *
+  # *                                                             *
+  # * If you are adding a lambda function role, make sure add the *2
+  # * role to roles section here.                                 *
+  # *                                                             *
+  # ***************************************************************
+
+  BasicLambdaExecutionPolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+            Resource: "arn:aws:logs:*:*:*"
+      PolicyName: !Join
+        - "-"
+        - - !Ref "AWS::StackName"
+          - BasicLambdaExecutionPolicy
+      Roles:
+        - !GetAtt CommonStack.Outputs.EventStoreHandlerRoleName
+        - !GetAtt DeviceLogsStack.Outputs.DeviceLogHandlingRole
+        - !GetAtt TransactionStack.Outputs.TransactionHandlerRoleName
+        - !GetAtt UserStack.Outputs.ImportUserRoleName
+        - !GetAtt UserStack.Outputs.GetUserProfileRoleName
+        - !GetAtt UserStack.Outputs.GetUserConfigRoleName
+        - !GetAtt UserStack.Outputs.UsersServiceInitHandlerRoleName
+        - !GetAtt ReportingStack.Outputs.ReportDomainEventHandlerRoleName
+        - !GetAtt ReportingStack.Outputs.ReportInitHandlerRoleName
+        - !GetAtt ReportingStack.Outputs.CloudWatchHandlerRoleName
+        - !GetAtt ReportingStack.Outputs.ScheduledReportHandlerRoleName
+        - !GetAtt AttachmentserviceStack.Outputs.AttachmentS3EventRoleARN
+        - Fn::ImportValue: !Sub
+            - "${Enviro}-cognitoConfirmSignUpHandlerRoleName"
+            - { Enviro: !Select [0, !Split [".", !Ref DomainName]] }
+        - Fn::ImportValue: !Sub
+            - "${Enviro}-cognitoPostAuthenticationHandlerRoleName"
+            - { Enviro: !Select [0, !Split [".", !Ref DomainName]] }
+        - Fn::ImportValue: !Sub
+            - "${Enviro}-cognitoPreSignUpHandlerRoleName"
+            - { Enviro: !Select [0, !Split [".", !Ref DomainName]] }
+
+  BasicLambdaSNSPublishPolicy:
+    Type: "AWS::IAM::Policy"
+    Condition: EnableWebSockets
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - "sns:Publish"
+              - "sns:ListTopics"
+              - "sns:GetTopicAttributes"
+            Resource:
+              - !GetAtt WebSocketStack.Outputs.DirectTopicARN
+              - !GetAtt WebSocketStack.Outputs.MapTopicARN
+              - !GetAtt WebSocketStack.Outputs.ManagementTopicARN
+      PolicyName: !Join
+        - "-"
+        - - !Ref "AWS::StackName"
+          - BasicLambdaSNSPublishPolicy
+      Roles:
+        - !GetAtt UserStack.Outputs.GetUserConfigRoleName
+        - !GetAtt ReportingStack.Outputs.ReportDomainEventHandlerRoleName
+        - !GetAtt QuicksightStack.Outputs.EmbedUrlHandlerRoleName
+        - !GetAtt DocumentStack.Outputs.DocumentS3RoleName
+        - !GetAtt ChatStack.Outputs.ChatServiceRoleName
+        - !If [
+            EnableDelivery,
+            !GetAtt DeliveryStack.Outputs.DeliveryServiceRoleName,
+            !Ref AWS::NoValue,
+          ]
+
+  CognitoPostAuthenticationHandlerPolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: !Sub "${AWS::StackName}-PostAuthenticationHandlerPolicy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: PostAuthenticationHandlerSNS
+            Effect: Allow
+            Action:
+              - "sns:*"
+            Resource: "*"
+          - Sid: PostAuthenticationHandlerDDB
+            Effect: Allow
+            Action:
+              - "dynamodb:PutItem"
+              - "dynamodb:GetItem"
+              - "dynamodb:Scan"
+              - "dynamodb:Query"
+              - "dynamodb:UpdateItem"
+            Resource:
+              - !GetAtt UserStack.Outputs.UserServiceTableARN
+              - !GetAtt UserStack.Outputs.UserEventStoreTableARN
+              - !Sub "${UserStack.Outputs.UserServiceTableARN}/index/GSI-1"
+              - !Sub "${UserStack.Outputs.UserServiceTableARN}/index/GSI-2"
+      Roles:
+        - Fn::ImportValue: !Sub
+            - "${Enviro}-cognitoPostAuthenticationHandlerRoleName"
+            - { Enviro: !Select [0, !Split [".", !Ref DomainName]] }
+
+  CognitoConfirmSignUpHandlerRolePolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: !Sub "${AWS::StackName}-ConfirmSignUpHandlerRolePolicy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: ConfirmSignUpHandlerTopic
+            Effect: Allow
+            Action:
+              - SNS:Publish
+            Resource: !GetAtt QrCodeStack.Outputs.GenerateUserQrInstanceLambdaTopicArn
+          - Sid: ConfirmSignUpHandlerDDB
+            Effect: Allow
+            Action:
+              - "dynamodb:PutItem"
+              - "dynamodb:DeleteItem"
+              - "dynamodb:Query"
+              - "dynamodb:Scan"
+            Resource:
+              - !GetAtt UserStack.Outputs.UserServiceTableARN
+              - !GetAtt UserStack.Outputs.UserEventStoreTableARN
+              - !Sub "${UserStack.Outputs.UserServiceTableARN}/index/GSI-1"
+              - !Sub "${UserStack.Outputs.UserServiceTableARN}/index/GSI-2"
+      Roles:
+        - Fn::ImportValue: !Sub
+            - "${Enviro}-cognitoConfirmSignUpHandlerRoleName"
+            - { Enviro: !Select [0, !Split [".", !Ref DomainName]] }
+
+  CognitoPreSignUpHandlerRolePolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: !Sub "${AWS::StackName}-PreSignUpHandlerRolePolicy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: PreSignUpHandlerSNS
+            Effect: Allow
+            Action:
+              - "sns:*"
+            Resource: "*"
+          - Sid: PreSignUpHandlerDDB
+            Effect: Allow
+            Action:
+              - "dynamodb:PutItem"
+              - "dynamodb:GetItem"
+              - "dynamodb:Scan"
+              - "dynamodb:Query"
+              - "dynamodb:UpdateItem"
+            Resource:
+              - !GetAtt UserStack.Outputs.UserServiceTableARN
+              #              - !GetAtt UserStack.Outputs.UserEventStoreTableARN
+              - !Sub "${UserStack.Outputs.UserServiceTableARN}/index/GSI-1"
+              - !Sub "${UserStack.Outputs.UserServiceTableARN}/index/GSI-2"
+      Roles:
+        - Fn::ImportValue: !Sub
+            - "${Enviro}-cognitoPreSignUpHandlerRoleName"
+            - { Enviro: !Select [0, !Split [".", !Ref DomainName]] }
+
+  UserEventStoreStreamToSNSHandlerRolePolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: !Join
+        - "-"
+        - - !Ref "AWS::StackName"
+          - UserDDBStreamPolicy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: AllowAccessUserEventStoreTableStream
+            Effect: Allow
+            Action:
+              - dynamodb:DescribeStream
+              - dynamodb:GetRecords
+              - dynamodb:GetShardIterator
+              - dynamodb:ListStreams
+            Resource:
+              - !GetAtt UserStack.Outputs.UserEventStoreTableARN
+              - !GetAtt UserStack.Outputs.UserEventStoreTableStreamARN
+          - Sid: AllowAccessCloudWatchLog
+            Effect: Allow
+            Action:
+              - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+            Resource: "arn:aws:logs:*:*:*"
+          - Effect: Allow
+            Action:
+              - "dynamodb:GetItem"
+              - "dynamodb:Query"
+            Resource:
+              - !GetAtt UserStack.Outputs.UserServiceTableARN
+              - !Sub "${UserStack.Outputs.UserServiceTableARN}/index/GSI-1"
+              - !Sub "${UserStack.Outputs.UserServiceTableARN}/index/GSI-2"
+      Roles:
+        - !Sub "${AWS::StackName}-EventStoreStreamToSNSHandlerRole"
+
+  TransactionEventStoreStreamToSNSHandlerRolePolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: !Join
+        - "-"
+        - - !Ref "AWS::StackName"
+          - TransactionDDBStreamPolicy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: AllowAccessTransactionEventStoreTableStream
+            Effect: Allow
+            Action:
+              - dynamodb:DescribeStream
+              - dynamodb:GetRecords
+              - dynamodb:GetShardIterator
+              - dynamodb:ListStreams
+            Resource:
+              - !GetAtt TransactionStack.Outputs.TransactionEventStoreTableArn
+              - !GetAtt TransactionStack.Outputs.TransactionEventStoreTableStreamArn
+          - Sid: AllowAccessCloudWatchLog
+            Effect: Allow
+            Action:
+              - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+            Resource: "arn:aws:logs:*:*:*"
+      Roles:
+        - !Sub "${AWS::StackName}-EventStoreStreamToSNSHandlerRole"
+
+  EventStoreStreamToSNSHandlerRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AmazonSNSFullAccess"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      RoleName: !Sub "${AWS::StackName}-EventStoreStreamToSNSHandlerRole"
+
+  EventStoreStreamToSNSHandler:
+    Type: "AWS::Lambda::Function"
+    DependsOn:
+      - TransactionEventStoreStreamToSNSHandlerRolePolicy
+      - UserEventStoreStreamToSNSHandlerRolePolicy
+    Properties:
+      Code:
+        S3Bucket: !Ref CodeBucketName
+        S3Key: !Ref CodeObjectKey
+      Description: Triggered by any EventStoreTable Trigger and send the event to SNS
+      Environment:
+        Variables:
+          DomainObjectEventTopic: !GetAtt CommonStack.Outputs.TopicDomainObjectUpdateARN
+      FunctionName: !Sub "common-TransactionHandler"
+      Handler: dist/EventStore/EventPublisher.EventStoreStreamToSNSHandler
+      Role: !GetAtt EventStoreStreamToSNSHandlerRole.Arn
+      Runtime: nodejs14.x
+      Timeout: 30
+
+  UserEventStoreTableToSNSStream:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 1 #trigger two lambda per document
+      Enabled: True
+      EventSourceArn: !GetAtt UserStack.Outputs.UserEventStoreTableStreamARN
+      FunctionName: !GetAtt EventStoreStreamToSNSHandler.Arn
+      StartingPosition: LATEST #always start at the tail of the stream
+
+  TransactionEventStoreTableToSNSStream:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 1 #trigger two lambda per document
+      Enabled: True
+      EventSourceArn: !GetAtt TransactionStack.Outputs.TransactionEventStoreTableStreamArn
+      FunctionName:
+        Fn::GetAtt: [EventStoreStreamToSNSHandler, Arn]
+      StartingPosition: LATEST #always start at the tail of the stream
+
+  IntegrationServiceSubscription:
+    Type: "AWS::SNS::Subscription"
+    Properties:
+      TopicArn: !GetAtt CommonStack.Outputs.TopicDomainObjectUpdateARN
+      Endpoint: !GetAtt IntegrationStack.Outputs.IntegrationServiceDomainEventQueueARN
+      Protocol: sqs
+      FilterPolicy:
+        EventCode:
+          - DECONSOLIDATION_COMPLETED
+          - CONSOLIDATION_COMPLETED
+          - SORT_COMPLETED
+          - UNLOAD_COMPLETED
+          - LOAD_COMPLETED
+          - CUBING_COMPLETED
+          - ATTACHMENT_RECEIVED
+
+  DomainObjectUpdateTopicAllowPublishMessagePolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - "SNS:Publish"
+            Resource: !GetAtt CommonStack.Outputs.TopicDomainObjectUpdateARN
+      PolicyName: !Sub "${AWS::StackName}-DomainObjectUpdateTopicAllowPublishMessagePolicy"
+      Roles:
+        - !GetAtt TransactionStack.Outputs.TransactionHandlerRoleName
+
+  RESTAPI:
+    Type: "AWS::ApiGateway::RestApi"
+    Properties:
+      MinimumCompressionSize: 4096
+      Description: Leopard Cube API
+      EndpointConfiguration:
+        Types:
+          - EDGE
+      Name: !Join
+        - "-"
+        - - !Ref "AWS::StackName"
+          - RESTAPI
+
+  RESTAPIGatewayCors5XX:
+    Type: "AWS::ApiGateway::GatewayResponse"
+    Properties:
+      ResponseType: DEFAULT_5XX
+      RestApiId: !Ref RESTAPI
+      ResponseParameters:
+        gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+        gatewayresponse.header.Access-Control-Allow-Origin: !Sub "'https://${DomainName}'"
+      ResponseTemplates:
+        application/json: '{"message": $context.error.messageString,"resourcePath": "$context.resourcePath","AWSType": "$context.error.responseType","StaticType": "Default 5XX"}'
+
+  RESTAPIGatewayIntegrationFailure:
+    Type: "AWS::ApiGateway::GatewayResponse"
+    Properties:
+      ResponseType: INTEGRATION_FAILURE
+      RestApiId: !Ref RESTAPI
+      ResponseParameters:
+        gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+        gatewayresponse.header.Access-Control-Allow-Origin: !Sub "'https://${DomainName}'"
+      ResponseTemplates:
+        application/json: '{"message": $context.error.messageString,"statusCode": "504","resourcePath": "$context.resourcePath","AWSType": "$context.error.responseType","StaticType": "Integration Failure"}'
+      StatusCode: "504"
+
+  RESTAPIDomainName:
+    Type: AWS::ApiGateway::DomainName
+    Properties:
+      DomainName: !Sub "api.${DomainName}"
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      RegionalCertificateArn: !Ref RegionalACMCertArn
+
+  RESTAPIPathMapping:
+    Type: AWS::ApiGateway::BasePathMapping
+    Properties:
+      DomainName: !Ref RESTAPIDomainName
+      RestApiId: !Ref RESTAPI
+      Stage: !Ref RESTAPIStage
+
+  APIGWRecrdSet:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      AliasTarget:
+        DNSName: !GetAtt RESTAPIDomainName.RegionalDomainName
+        HostedZoneId: !GetAtt RESTAPIDomainName.RegionalHostedZoneId
+      HostedZoneName: !Sub "${DomainName}."
+      Name: !Sub "api.${DomainName}"
+      Region: !Ref AWS::Region
+      SetIdentifier: api
+      Type: A
+
+  # API key
+  ApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    Properties:
+      Name: !Join ["", [{ "Ref": "AWS::StackName" }, "-apikey"]]
+      Description: "CloudFormation API Key"
+      Enabled: true
+  #API Usage plan
+  ApiUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    DependsOn: RESTAPIStage
+    Properties:
+      ApiStages:
+        - ApiId: !Ref RESTAPI
+          Stage: prod
+      Description: !Join [" ", [{ "Ref": "AWS::StackName" }, "usage plan"]]
+      Throttle:
+        BurstLimit: 100
+        RateLimit: 100
+      UsagePlanName: !Join ["", [{ "Ref": "AWS::StackName" }, "-usage-plan"]]
+  #API Usage plan key
+  ApiUsagePlanKey:
+    Type: "AWS::ApiGateway::UsagePlanKey"
+    DependsOn:
+      - ApiKey
+      - ApiUsagePlan
+    Properties:
+      KeyId: !Ref ApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref ApiUsagePlan
+
+  # ***************************************************************
+  # *                                                             *
+  # * API GW - Additional Setup Section                           *
+  # *                                                             *
+  # * This section's intention is to hold configurations made to  *
+  # * REST API in general.                                        *
+  # *                                                             *
+  # * ******************!!!!!IMPORTANT!!!!!************************
+  # *                                                             *
+  # * You have to rename Deployment resource below to deploy      *
+  # * your API changes.                                           *
+  # *                                                             *
+  # ***************************************************************
+
+  # Change the name below to make sure API GW is deployed.
+  RESTAPIDeploymentV8:
+    DependsOn:
+      - CommonStack
+      - TransactionStack
+      - DeviceLogsStack
+      - UserStack
+      - IntegrationStack
+      - AttachmentserviceStack
+      - ReportingStack
+
+    Type: "AWS::ApiGateway::Deployment"
+    Properties:
+      RestApiId: !Ref RESTAPI
+
+  # Defines the stage where deployment is going to be deployed to.
+  RESTAPIStage:
+    Type: "AWS::ApiGateway::Stage"
+    Properties:
+      DeploymentId: !Ref RESTAPIDeploymentV8
+      Description: Production
+      RestApiId: !Ref RESTAPI
+      StageName: prod
+
+  # Role for API GW to Invoke Lambda functions
+  APIInvokeLambdaRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-APIInvokeLambdaRole"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+                - apigateway.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: !Join
+            - "-"
+            - - !Ref "AWS::StackName"
+              - APIInvokeLambdaRole
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: "lambda:InvokeFunction"
+                Resource: "*"
+
+  # need to populate this role with the specific lambda's that the sync handler will be allowed to invoke
+  # then pass this handler into the IER stack.
+  # creates a dependency chain ${various lambda ARN's} -> IERSyncInvokeLambdaRole -> stack-ier
+  IERSyncInvokeLambdaRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-IERSyncInvokeLambdaRole"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+                - apigateway.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: !Sub "${AWS::StackName}-IERSyncInvokeLambdaRole"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: "lambda:InvokeFunction"
+                Resource:
+                  - !Join [
+                      "",
+                      [!GetAtt UserStack.Outputs.GetConfigByIdHandlerARN, "*"],
+                    ]
+                  - !Join [
+                      "",
+                      [!GetAtt QuicksightStack.Outputs.EmbedUrlHandlerARN, "*"],
+                    ]
+                  - !Join [
+                      "",
+                      [
+                        !GetAtt DocumentStack.Outputs.DocumentEntryPointARN,
+                        "*",
+                      ],
+                    ]
+                  - !Join [
+                      "",
+                      [!GetAtt ChatStack.Outputs.ChatEntryPointARN, "*"],
+                    ]
+                  - !If [
+                      EnableDelivery,
+                      !Join [
+                        "",
+                        [
+                          !GetAtt DeliveryStack.Outputs.DeliveryEntryPointARN,
+                          "*",
+                        ],
+                      ],
+                      !Ref AWS::NoValue,
+                    ]
+                  - !Join [
+                      "",
+                      [
+                        !GetAtt ReportingStack.Outputs.UserMetadataCUBEntryPointARN,
+                        "*",
+                      ],
+                    ]
+
+        - PolicyName: !Sub "${AWS::StackName}-IERPublishMessageToSNS"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "sns:Publish"
+                Resource:
+                  - !GetAtt CommonStack.Outputs.TopicDomainObjectUpdateARN
+        - PolicyName: AllowAccessCloudWatchLog
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: "arn:aws:logs:*:*:*"
+
+  # /roles
+  RolesResources:
+    Type: "AWS::ApiGateway::Resource"
+    Properties:
+      ParentId: !GetAtt RESTAPI.RootResourceId
+      PathPart: roles
+      RestApiId: !Ref RESTAPI
+  # /roles/{roleId}
+  RoleIDResource:
+    Type: "AWS::ApiGateway::Resource"
+    Properties:
+      ParentId: !Ref RolesResources
+      PathPart: "{roleId}"
+      RestApiId: !Ref RESTAPI
+
+  AdminRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: cognito-identity.amazonaws.com
+            Action: "sts:AssumeRoleWithWebIdentity"
+            Condition:
+              StringEquals:
+                "cognito-identity.amazonaws.com:aud":
+                  Fn::ImportValue: !Sub
+                    - "${Enviro}-cognitoIdentityPoolID"
+                    - { Enviro: !Select [0, !Split [".", !Ref DomainName]] }
+      RoleName: !Join
+        - "-"
+        - - !Ref "AWS::StackName"
+          - AdminRole
+      Policies:
+        - PolicyName: !Join
+            - "-"
+            - - !Ref "AWS::StackName"
+              - AdminPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: AllowInvokeAdminAPI
+                Effect: Allow
+                Action: "execute-api:Invoke"
+                Resource:
+                  - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RESTAPI}/prod/*/*"
+
+  CCRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: cognito-identity.amazonaws.com
+            Action: "sts:AssumeRoleWithWebIdentity"
+            Condition:
+              StringEquals:
+                "cognito-identity.amazonaws.com:aud":
+                  Fn::ImportValue: !Sub
+                    - "${Enviro}-cognitoIdentityPoolID"
+                    - { Enviro: !Select [0, !Split [".", !Ref DomainName]] }
+      RoleName: !Join
+        - "-"
+        - - !Ref "AWS::StackName"
+          - CCRole
+      Policies:
+        - PolicyName: !Join
+            - "-"
+            - - !Ref "AWS::StackName"
+              - CCPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: AllowInvokeCCAPI
+                Effect: Allow
+                Action: "execute-api:Invoke"
+                Resource:
+                  - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RESTAPI}/prod/DELETE/groups/*/configs/*"
+                  - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RESTAPI}/prod/PUT/groups/*/configs/*"
+                  - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RESTAPI}/prod/GET/users/*/profile"
+                  - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RESTAPI}/prod/GET/users/*/config"
+                  - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RESTAPI}/prod/POST/users"
+                  - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RESTAPI}/prod/GET/reports/*"
+                  - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RESTAPI}/prod/GET/attachment/*"
+                  - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RESTAPI}/prod/*/event/*"
+                  - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RESTAPI}/prod/*/chat/*"
+                  - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RESTAPI}/prod/*/document/*"
+                  - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RESTAPI}/prod/POST/transactions"
+
+  AppRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: cognito-identity.amazonaws.com
+            Action: "sts:AssumeRoleWithWebIdentity"
+            Condition:
+              StringEquals:
+                "cognito-identity.amazonaws.com:aud":
+                  Fn::ImportValue: !Sub
+                    - "${Enviro}-cognitoIdentityPoolID"
+                    - { Enviro: !Select [0, !Split [".", !Ref DomainName]] }
+      RoleName: !Join
+        - "-"
+        - - !Ref "AWS::StackName"
+          - AppRole
+      Policies:
+        - PolicyName: !Join
+            - "-"
+            - - !Ref "AWS::StackName"
+              - AppPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: AllowInvokeAppAPI
+                Effect: Allow
+                Action: "execute-api:Invoke"
+                Resource:
+                  - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RESTAPI}/prod/POST/devices/logs"
+                  - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RESTAPI}/prod/GET/users/*/config"
+                  - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RESTAPI}/prod/GET/users/*/profile"
+                  - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RESTAPI}/prod/POST/transactions"
+                  - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RESTAPI}/prod/GET/reports/*"
+                  - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RESTAPI}/prod/*/event/*"
+                  - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RESTAPI}/prod/*/chat/*"
+                  - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RESTAPI}/prod/*/document/*"
+
+  CommonRoleWebSocketPolicy:
+    Type: "AWS::IAM::Policy"
+    Condition: EnableWebSockets
+    Properties:
+      PolicyName: !Join
+        - "-"
+        - - !Ref "AWS::StackName"
+          - AppWebSocketPolicy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: AllowInvokeAppWebSocketAPI
+            Effect: Allow
+            Action:
+              - "execute-api:Invoke"
+              - "execute-api:ManageConnections"
+            Resource:
+              - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketStack.Outputs.WebSocketApiId}/${WebSocketStack.Outputs.WebSocketStage}/*"
+      Roles:
+        - !Ref AppRole
+        - !Ref CCRole
+        - !Ref AdminRole
+
+  IERPublishMessageRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Sub "router-IERPublishMessage"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: !Join
+            - "-"
+            - - !Ref "AWS::StackName"
+              - IERListSNSTopics
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "sns:ListTopics"
+                  - "sns:GetTopicAttributes"
+                Resource:
+                  - !Sub "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:*"
+        - PolicyName: InvokeCommonPubSNS
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "lambda:InvokeFunction"
+                Resource:
+                  - !Join [
+                      "",
+                      [!GetAtt CommonStack.Outputs.PublishToSNSHandlerArn, "*"],
+                    ]
+        - PolicyName: !Join
+            - "-"
+            - - !Ref "AWS::StackName"
+              - IERPublishMessageToSNS
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "sns:Publish"
+                Resource:
+                  - !GetAtt CommonStack.Outputs.TopicDomainObjectUpdateARN
+                  - !GetAtt CommonStack.Outputs.IERtoReportingServiceTopicARN
+                  - !GetAtt CommonStack.Outputs.InboundEventBusTopicARN
+                  - !GetAtt GPSStack.Outputs.GPSEventTopicARN
+                  - !GetAtt UserStack.Outputs.ConfigLambdaTopicARN
+                  - !GetAtt QuicksightStack.Outputs.QuicksightTopicARN
+                  - !GetAtt DocumentStack.Outputs.DocumentTopicARN
+                  - !GetAtt ChatStack.Outputs.ChatTopicARN
+                  - !If [
+                      EnableDelivery,
+                      !GetAtt DeliveryStack.Outputs.DeliveryTopicARN,
+                      !Ref AWS::NoValue,
+                    ]
+                  - !GetAtt ReportingStack.Outputs.UserMetadataCUDTopicARN
+        - PolicyName: AllowAccessCloudWatchLog
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: "arn:aws:logs:*:*:*"
+
+  #Parameter Store
+
+  #MySQL DB Name
+  BasicParameter:
+    Type: "AWS::SSM::Parameter"
+    Properties:
+      Value: !Ref MySQLDatabaseName
+      Type: String
+      Name: sqldbname
+
+  #OfficeIP
+  officeip:
+    Type: "AWS::SSM::Parameter"
+    Properties:
+      Value: !Ref OfficeIP
+      Type: String
+      Name: officeip
+
+  #VPC ID
+  vpcid:
+    Type: "AWS::SSM::Parameter"
+    Properties:
+      Value: !Ref VpcId
+      Type: String
+      Name: vpcid
+
+  #BastionImageId
+  bastionami:
+    Type: "AWS::SSM::Parameter"
+    Properties:
+      Value: !Ref BastionImageId
+      Type: String
+      Name: bastionami
+
+  #BastionImageMySQLToolId
+  bastionamisql:
+    Type: "AWS::SSM::Parameter"
+    Properties:
+      Value: !Ref BastionImageMySQLToolId
+      Type: String
+      Name: bastionamisql
+
+  #BastionKeyName
+  bastionkey:
+    Type: "AWS::SSM::Parameter"
+    Properties:
+      Value: !Ref BastionKeyName
+      Type: String
+      Name: bastionkey
+
+  #CodeBucketName
+  codebucketname:
+    Type: "AWS::SSM::Parameter"
+    Properties:
+      Value: !Ref CodeBucketName
+      Type: String
+      Name: codebucketname
+
+  #CodeObjectKey
+  codeobjectkey:
+    Type: "AWS::SSM::Parameter"
+    Properties:
+      Value: !Ref CodeObjectKey
+      Type: String
+      Name: codeobjectkey
+
+  GeotabStack:
+    Type: "AWS::CloudFormation::Stack"
+    Properties:
+      TemplateURL: !Sub "https://${CodeBucketName}.s3.amazonaws.com/build/templates/stack-geotab.yml"
+      Parameters:
+        ServiceName: "geotab"
+        CodeBucketName:
+          Ref: CodeBucketName
+        ViewCodeObjectKey: !Ref TSCodeObjectKey
+      Tags:
+        - Key: StackName
+          Value: ReportingStack
+        - Key: ParentStackName
+          Value: !Ref "AWS::StackName"
+
+  ReportingStack:
+    Type: "AWS::CloudFormation::Stack"
+    Properties:
+      TemplateURL: !Sub "https://${CodeBucketName}.s3.amazonaws.com/build/templates/stack-reporting.yml"
+      Parameters:
+        ServiceName: "reporting"
+        CodeBucketName:
+          Ref: CodeBucketName
+        CodeObjectKey:
+          Ref: CodeObjectKey
+        ParentStackName:
+          Ref: "AWS::StackName"
+        DomainName:
+          Ref: DomainName
+        TopicDomainObjectUpdate: !GetAtt CommonStack.Outputs.TopicDomainObjectUpdateARN
+        DLQAlarmTopicARN: !GetAtt CommonStack.Outputs.DLQAlarmTopicARN
+        AttachmentBucketName: !Join
+          - "-"
+          - - !Ref "AWS::StackName"
+            - "attachment-store"
+        RESTAPI:
+          Ref: RESTAPI
+        RESTAPIRootResourceId: !GetAtt RESTAPI.RootResourceId
+        APIInvokeLambdaRoleArn: !GetAtt APIInvokeLambdaRole.Arn
+        DBMasterUsername: !Ref MasterUsername
+        DBMasterUserPassword: !Ref MasterUserPassword
+        DBName: !Ref MySQLDatabaseName
+        VpcId: !Ref VpcId
+        SubnetIds: !Ref SubnetIds
+        EngineVersion: !Ref EngineVersion
+        CodeObjectDotNetCoreKey: !Ref CodeObjectDotNetCoreKey
+        BackendInitProjectRole: !Ref BackendInitProjectRole
+        IERtoReportingServiceTopicARN: !GetAtt CommonStack.Outputs.IERtoReportingServiceTopicARN
+        GPSEventTopicARN: !GetAtt GPSStack.Outputs.GPSEventTopicARN
+        # DirectTopicARN:
+        # !If [ EnableWebSockets, !GetAtt WebSocketStack.Outputs.DirectTopicARN, "" ]
+        PublishToSNSHandlerName:
+          !If [
+            EnableWebSockets,
+            !GetAtt CommonStack.Outputs.PublishToSNSHandlerName,
+            "",
+          ]
+        PublishToSNSHandlerArn:
+          !If [
+            EnableWebSockets,
+            !GetAtt CommonStack.Outputs.PublishToSNSHandlerArn,
+            "",
+          ]
+        WebSocketSecurityGroup: !GetAtt CommonStack.Outputs.WebSocketSecurityGroup
+        WebSocketsEnabled: !Ref WebSocketsEnabled
+        ViewCodeObjectKey: !Ref SplitCodeObjectKey
+      Tags:
+        - Key: StackName
+          Value: ReportingStack
+        - Key: ParentStackName
+          Value: !Ref "AWS::StackName"
+
+  IntegrationStack:
+    Type: "AWS::CloudFormation::Stack"
+    Properties:
+      TemplateURL: !Sub "https://${CodeBucketName}.s3.amazonaws.com/build/templates/stack-integration.yml"
+      Parameters:
+        ServiceName: "integration"
+        CodeBucketName:
+          Ref: CodeBucketName
+        CodeObjectKey:
+          Ref: CodeObjectKey
+        ParentStackName:
+          Ref: "AWS::StackName"
+        DomainName:
+          Ref: DomainName
+        TopicDomainObjectUpdate: !GetAtt CommonStack.Outputs.TopicDomainObjectUpdateARN
+        AttachmentBucketName: !Join
+          - "-"
+          - - !Ref "AWS::StackName"
+            - "attachment-store"
+        RESTAPI: !Ref RESTAPI
+        RESTAPIRootResourceId: !GetAtt RESTAPI.RootResourceId
+      Tags:
+        - Key: StackName
+          Value: IntegrationStack
+        - Key: ParentStackName
+          Value: !Ref "AWS::StackName"
+
+  UserStack:
+    Type: "AWS::CloudFormation::Stack"
+    Properties:
+      TemplateURL: !Sub "https://${CodeBucketName}.s3.amazonaws.com/build/templates/stack-user.yml"
+      Parameters:
+        ServiceName: "user"
+        CodeBucketName:
+          Ref: CodeBucketName
+        CodeObjectKey:
+          Ref: CodeObjectKey
+        ParentStackName:
+          Ref: "AWS::StackName"
+        DomainName:
+          Ref: DomainName
+        RESTAPI: !Ref RESTAPI
+        RESTAPIRootResourceId: !GetAtt RESTAPI.RootResourceId
+        APIInvokeLambdaRole: !GetAtt APIInvokeLambdaRole.Arn
+        UserServiceTableName: !Ref UserServiceTableName
+        UserEventStoreTableName: !Ref UserEventStoreTableName
+        TopicDomainObjectUpdateARN: !GetAtt CommonStack.Outputs.TopicDomainObjectUpdateARN
+        DomainEventStoreTableName: !Ref DomainEventStoreTableName
+        CognitoUserPoolId:
+          Fn::ImportValue: !Sub
+            - "${Enviro}-cognitoUserPoolID"
+            - { Enviro: !Select [0, !Split [".", !Ref DomainName]] }
+        CognitoUserPoolARN:
+          Fn::ImportValue: !Sub
+            - "${Enviro}-cognitoUserPoolARN"
+            - { Enviro: !Select [0, !Split [".", !Ref DomainName]] }
+        CognitoNormalClientID:
+          Fn::ImportValue: !Sub
+            - "${Enviro}-cognitoNormalClientID"
+            - { Enviro: !Select [0, !Split [".", !Ref DomainName]] }
+        ScalingRoleARN: !GetAtt CommonStack.Outputs.ScalingRoleARN
+        BackendInitProjectRole: !Ref BackendInitProjectRole
+        QrCodeBucketName: !Join
+          - "-"
+          - - !Select [0, !Split ["-", !Ref "AWS::StackName"]]
+            - "backend-qrcode-store"
+        QrCodeBucketArn: !Join
+          - ":"
+          - - "arn:aws:s3::"
+            - !Join
+              - "-"
+              - - !Ref "AWS::StackName"
+                - "qrcode-store"
+      Tags:
+        - Key: StackName
+          Value: UserStack
+        - Key: ParentStackName
+          Value: !Ref "AWS::StackName"
+
+  CommonStack:
+    Type: "AWS::CloudFormation::Stack"
+    Properties:
+      TemplateURL: !Sub "https://${CodeBucketName}.s3.amazonaws.com/build/templates/stack-common.yml"
+      Parameters:
+        ServiceName: "common"
+        CodeBucketName:
+          Ref: CodeBucketName
+        CodeObjectKey:
+          Ref: CodeObjectKey
+        IERCodeObjectKey: !Ref SplitCodeObjectKey
+        ParentStackName:
+          Ref: "AWS::StackName"
+        DomainName:
+          Ref: DomainName
+        RESTAPIRootResourceId: !Ref RESTAPI
+        BackendInitProjectRole: !Ref BackendInitProjectRole
+        VpcId: !Ref VpcId
+        SubnetIds: !Ref SubnetIds
+        WebSocketsEnabled: !Ref WebSocketsEnabled
+      Tags:
+        - Key: StackName
+          Value: CommonStack
+        - Key: ParentStackName
+          Value: !Ref "AWS::StackName"
+
+  TransactionStack:
+    Type: "AWS::CloudFormation::Stack"
+    Properties:
+      TemplateURL: !Sub "https://${CodeBucketName}.s3.amazonaws.com/build/templates/stack-transaction.yml"
+      Parameters:
+        ServiceName: "transaction"
+        CodeBucketName:
+          Ref: CodeBucketName
+        CodeObjectKey:
+          Ref: CodeObjectKey
+        ParentStackName:
+          Ref: "AWS::StackName"
+        DomainName:
+          Ref: DomainName
+        TopicDomainObjectUpdateARN: !GetAtt CommonStack.Outputs.TopicDomainObjectUpdateARN
+        DLQAlarmTopicARN: !GetAtt CommonStack.Outputs.DLQAlarmTopicARN
+        TransactionTableName: "TransactionEventStore"
+        RESTAPI:
+          Ref: RESTAPI
+        RESTAPIRootResourceId: !GetAtt RESTAPI.RootResourceId
+        TransactionServiceTableName: !Ref TransactionServiceTableName
+      Tags:
+        - Key: StackName
+          Value: TransactionStack
+        - Key: ParentStackName
+          Value: !Ref "AWS::StackName"
+
+  AttachmentserviceStack:
+    Type: "AWS::CloudFormation::Stack"
+    Properties:
+      TemplateURL: !Sub "https://${CodeBucketName}.s3.amazonaws.com/build/templates/stack-attachmentservice.yml"
+      Parameters:
+        ServiceName: "attachment"
+        deadLetterTargetArn: !GetAtt CommonStack.Outputs.DLEventStoreQueueARN
+        IntegrationStackARN: !GetAtt IntegrationStack.Outputs.IntegrationServiceEventHandlerArn
+        DomainObjectEventTopicARN: !GetAtt CommonStack.Outputs.TopicDomainObjectUpdateARN
+        CodeBucketName: !Ref CodeBucketName
+        CodeObjectKey: !Ref CodeObjectKey
+        AdminRole: !GetAtt AdminRole.Arn
+        AppRole: !GetAtt AppRole.Arn
+        CCRole: !GetAtt CCRole.Arn
+        APIInvokeLambdaRole: !GetAtt APIInvokeLambdaRole.Arn
+        RESTAPI:
+          Ref: RESTAPI
+        RESTAPIRootResourceId: !GetAtt RESTAPI.RootResourceId
+        DomainName:
+          Ref: DomainName
+        ParentStackName: !Ref "AWS::StackName"
+        DomainEventStoreTableName: !GetAtt CommonStack.Outputs.DomainEventStoreTableName
+        AttachmentServiceTableName: !Ref AttachmentServiceTableName
+        CognitoUserPoolARN:
+          Fn::ImportValue: !Sub
+            - "${Enviro}-cognitoUserPoolARN"
+            - { Enviro: !Select [0, !Split [".", !Ref DomainName]] }
+        CognitoNormalClientID:
+          Fn::ImportValue: !Sub
+            - "${Enviro}-cognitoNormalClientID"
+            - { Enviro: !Select [0, !Split [".", !Ref DomainName]] }
+      Tags:
+        - Key: StackName
+          Value: AttachmentStack
+        - Key: ParentStackName
+          Value: !Ref "AWS::StackName"
+
+  DeviceLogsStack:
+    Type: "AWS::CloudFormation::Stack"
+    Properties:
+      TemplateURL: !Sub "https://${CodeBucketName}.s3.amazonaws.com/build/templates/stack-devicelogs.yml"
+      Parameters:
+        ServiceName: "devicelog"
+        DeviceLogBucketName: !Ref DeviceLogBucketName
+        APIInvokeLambdaRole: !GetAtt APIInvokeLambdaRole.Arn
+        CodeBucketName: !Ref CodeBucketName
+        DomainName: !Ref DomainName
+        RESTAPI: !Ref RESTAPI
+        RESTAPIRootResourceId: !GetAtt RESTAPI.RootResourceId
+        CodeObjectKey: !Ref CodeObjectKey
+        ParentStackName: !Ref "AWS::StackName"
+      Tags:
+        - Key: StackName
+          Value: DeviceLogStack
+        - Key: ParentStackName
+          Value: !Ref "AWS::StackName"
+
+  InboundEventRouterStack:
+    Type: "AWS::CloudFormation::Stack"
+    Properties:
+      TemplateURL: !Sub "https://${CodeBucketName}.s3.amazonaws.com/build/templates/stack-ier.yml"
+      Parameters:
+        # need to move this to security and replace with dedicated role for each lambda required in sync mode
+        #        APIInvokeLambdaRole:
+        #          !GetAtt APIInvokeLambdaRole.Arn
+        ServiceName: "eventrouter"
+        CodeBucketName: !Ref CodeBucketName
+        IERCodeObjectKey: !Ref SplitCodeObjectKey
+        IERPublishMessageRoleARN: !GetAtt IERPublishMessageRole.Arn
+        DomainName: !Ref DomainName
+        RESTAPI: !Ref RESTAPI
+        RESTAPIRootResourceId: !GetAtt RESTAPI.RootResourceId
+        ParentStackName: !Ref "AWS::StackName"
+        IERSyncInvokeLambdaRoleARN: !GetAtt IERSyncInvokeLambdaRole.Arn
+      Tags:
+        - Key: StackName
+          Value: InboundEventRouterStack
+        - Key: ParentStackName
+          Value: !Ref "AWS::StackName"
+
+  GPSStack:
+    Type: "AWS::CloudFormation::Stack"
+    Properties:
+      TemplateURL: !Sub "https://${CodeBucketName}.s3.amazonaws.com/build/templates/stack-gps.yml"
+      Parameters:
+        ServiceName: "gps"
+        CodeBucketName: !Ref CodeBucketName
+        CodeObjectKey: !Ref CodeObjectKey
+        EventStoreBucketName: !GetAtt CommonStack.Outputs.EventStoreBucketName
+        ParentStackName: !Ref "AWS::StackName"
+        DomainName: !Ref DomainName
+      Tags:
+        - Key: StackName
+          Value: GPSServiceStack
+        - Key: ParentStackName
+          Value: !Ref "AWS::StackName"
+
+  WebSocketStack:
+    Type: "AWS::CloudFormation::Stack"
+    Condition: EnableWebSockets
+    Properties:
+      TemplateURL: !Sub "https://${CodeBucketName}.s3.amazonaws.com/build/templates/stack-websocket.yml"
+      Parameters:
+        ServiceName: "websocket"
+        CodeBucketName: !Ref CodeBucketName
+        IERCodeObjectKey: !Ref SplitCodeObjectKey
+        ParentStackName: !Ref "AWS::StackName"
+        IERPublishMessageRoleARN: !GetAtt IERPublishMessageRole.Arn
+        IERPublishMessageRoleName: !Ref IERPublishMessageRole
+        DomainName: !Ref DomainName
+        RegionalACMCertArn: !Ref RegionalACMCertArn
+        VpcId: !Ref VpcId
+        SubnetIds: !Ref SubnetIds
+        PublishToSNSHandlerName: !GetAtt CommonStack.Outputs.PublishToSNSHandlerName
+        WebSocketSecurityGroup: !GetAtt CommonStack.Outputs.WebSocketSecurityGroup
+        LogTopicArn: !GetAtt DeviceLogsStack.Outputs.LogNotificationTopicArn
+      Tags:
+        - Key: StackName
+          Value: WebSocketStack
+        - Key: ParentStackName
+          Value: !Ref "AWS::StackName"
+
+  QuicksightStack:
+    Type: "AWS::CloudFormation::Stack"
+    Properties:
+      TemplateURL: !Sub "https://${CodeBucketName}.s3.amazonaws.com/build/templates/stack-quicksight.yml"
+      Parameters:
+        ServiceName: "quicksight"
+        CodeBucketName: !Ref CodeBucketName
+        CodeObjectKey: !Ref CodeObjectKey
+        ParentStackName: !Ref "AWS::StackName"
+        DomainName: !Ref DomainName
+      Tags:
+        - Key: StackName
+          Value: QuicksightServiceStack
+        - Key: ParentStackName
+          Value: !Ref "AWS::StackName"
+
+  DocumentStack:
+    Type: "AWS::CloudFormation::Stack"
+    Properties:
+      TemplateURL: !Sub "https://${CodeBucketName}.s3.amazonaws.com/build/templates/stack-document.yml"
+      Parameters:
+        ServiceName: "document"
+        CodeBucketName: !Ref CodeBucketName
+        DocumentCodeObjectKey: !Ref SplitCodeObjectKey
+        ParentStackName: !Ref "AWS::StackName"
+        DocumentBucketName: !Sub "${AWS::StackName}-document-store"
+        RDSSecretArn: !GetAtt ReportingStack.Outputs.RDSSecretArn
+        RDSHost: !GetAtt ReportingStack.Outputs.ClusterEndpointAddress
+        RDSSecurityGroupId: !GetAtt ReportingStack.Outputs.RDSSecurityGroupId
+        SubnetIds: !Ref SubnetIds
+        RDSUser: !GetAtt ReportingStack.Outputs.RDSUser
+        RDSPassword: !GetAtt ReportingStack.Outputs.RDSPassword
+        BackendInitProjectRole: !Ref BackendInitProjectRole
+      Tags:
+        - Key: StackName
+          Value: DocumentServiceStack
+        - Key: ParentStackName
+          Value: !Ref "AWS::StackName"
+
+  ChatStack:
+    Type: "AWS::CloudFormation::Stack"
+    Properties:
+      TemplateURL: !Sub "https://${CodeBucketName}.s3.amazonaws.com/build/templates/stack-chat.yml"
+      Parameters:
+        ServiceName: "chat"
+        CodeBucketName: !Ref CodeBucketName
+        ChatCodeObjectKey: !Ref SplitCodeObjectKey
+        ParentStackName: !Ref "AWS::StackName"
+        RDSSecretArn: !GetAtt ReportingStack.Outputs.RDSSecretArn
+        RDSHost: !GetAtt ReportingStack.Outputs.ClusterEndpointAddress
+        RDSSecurityGroupId: !GetAtt ReportingStack.Outputs.RDSSecurityGroupId
+        SubnetIds: !Ref SubnetIds
+        RDSUser: !GetAtt ReportingStack.Outputs.RDSUser
+        RDSPassword: !GetAtt ReportingStack.Outputs.RDSPassword
+        CognitoUserPoolId:
+          Fn::ImportValue: !Sub
+            - "${Enviro}-cognitoUserPoolID"
+            - { Enviro: !Select [0, !Split [".", !Ref DomainName]] }
+        CognitoUserPoolARN:
+          Fn::ImportValue: !Sub
+            - "${Enviro}-cognitoUserPoolARN"
+            - { Enviro: !Select [0, !Split [".", !Ref DomainName]] }
+        RESTAPI: !Ref RESTAPI
+        RESTAPIRootResourceId: !GetAtt RESTAPI.RootResourceId
+        APIInvokeLambdaRoleArn: !GetAtt APIInvokeLambdaRole.Arn
+        DomainName: !Ref DomainName
+        BackendInitProjectRole: !Ref BackendInitProjectRole
+      Tags:
+        - Key: StackName
+          Value: ChatServiceStack
+        - Key: ParentStackName
+          Value: !Ref "AWS::StackName"
+
+  DeliveryStack:
+    Type: "AWS::CloudFormation::Stack"
+    Condition: EnableDelivery
+    Properties:
+      TemplateURL: !Sub "https://${CodeBucketName}.s3.amazonaws.com/build/templates/stack-delivery.yml"
+      Parameters:
+        ServiceName: "delivery"
+        CodeBucketName: !Ref CodeBucketName
+        DeliveryCodeObjectKey: !Ref SplitCodeObjectKey
+        ParentStackName: !Ref "AWS::StackName"
+        RDSSecretArn: !GetAtt ReportingStack.Outputs.RDSSecretArn
+        RDSHost: !GetAtt ReportingStack.Outputs.ClusterEndpointAddress
+        RDSSecurityGroupId: !GetAtt ReportingStack.Outputs.RDSSecurityGroupId
+        SubnetIds: !Ref SubnetIds
+        RDSUser: !GetAtt ReportingStack.Outputs.RDSUser
+        RDSPassword: !GetAtt ReportingStack.Outputs.RDSPassword
+        CognitoUserPoolId:
+          Fn::ImportValue: !Sub
+            - "${Enviro}-cognitoUserPoolID"
+            - { Enviro: !Select [0, !Split [".", !Ref DomainName]] }
+        CognitoUserPoolARN:
+          Fn::ImportValue: !Sub
+            - "${Enviro}-cognitoUserPoolARN"
+            - { Enviro: !Select [0, !Split [".", !Ref DomainName]] }
+        RESTAPI: !Ref RESTAPI
+        RESTAPIRootResourceId: !GetAtt RESTAPI.RootResourceId
+        APIInvokeLambdaRoleArn: !GetAtt APIInvokeLambdaRole.Arn
+        DomainName: !Ref DomainName
+        BackendInitProjectRole: !Ref BackendInitProjectRole
+        GPSEventTopicARN: !GetAtt GPSStack.Outputs.GPSEventTopicARN
+      Tags:
+        - Key: StackName
+          Value: DeliveryServiceStack
+        - Key: ParentStackName
+          Value: !Ref "AWS::StackName"
+
+  TestParameter:
+    Type: "AWS::SSM::Parameter"
+    #Condition: EnableWebSockets
+    Properties:
+      Value: "silly aws"
+      Type: String
+      Name: testparam
+
+  QrCodeStack:
+    Type: "AWS::CloudFormation::Stack"
+    Properties:
+      TemplateURL: !Sub "https://${CodeBucketName}.s3.amazonaws.com/build/templates/stack-qrcode.yml"
+      Parameters:
+        ServiceName: "qrcode"
+        CodeBucketName:
+          Ref: CodeBucketName
+        CodeObjectKey:
+          Ref: CodeObjectKey
+        ParentStackName:
+          Ref: "AWS::StackName"
+        DomainName:
+          Ref: DomainName
+        RESTAPI: !Ref RESTAPI
+        RESTAPIRootResourceId: !GetAtt RESTAPI.RootResourceId
+        APIInvokeLambdaRole: !GetAtt APIInvokeLambdaRole.Arn
+        UserServiceTableName: !Ref UserServiceTableName
+        UserEventStoreTableName: !Ref UserEventStoreTableName
+        TopicDomainObjectUpdateARN: !GetAtt CommonStack.Outputs.TopicDomainObjectUpdateARN
+        DomainEventStoreTableName: !Ref DomainEventStoreTableName
+        CognitoUserPoolId:
+          Fn::ImportValue: !Sub
+            - "${Enviro}-cognitoUserPoolID"
+            - { Enviro: !Select [0, !Split [".", !Ref DomainName]] }
+        CognitoUserPoolARN:
+          Fn::ImportValue: !Sub
+            - "${Enviro}-cognitoUserPoolARN"
+            - { Enviro: !Select [0, !Split [".", !Ref DomainName]] }
+        CognitoNormalClientID:
+          Fn::ImportValue: !Sub
+            - "${Enviro}-cognitoNormalClientID"
+            - { Enviro: !Select [0, !Split [".", !Ref DomainName]] }
+        ScalingRoleARN: !GetAtt CommonStack.Outputs.ScalingRoleARN
+        BackendInitProjectRole: !Ref BackendInitProjectRole
+        AdminRole: !GetAtt AdminRole.Arn
+        CCRole: !GetAtt CCRole.Arn
+        UsersResource: !GetAtt UserStack.Outputs.UsersResource
+        WalletServiceTableName: !Ref WalletServiceTableName
+        ImportUserRoleArn: !GetAtt UserStack.Outputs.ImportUserRoleArn
+        CognitoConfirmSignUpHandlerRoleARN:
+          Fn::ImportValue: !Sub
+            - "${Enviro}-cognitoConfirmSignUpHandlerRoleARN"
+            - { Enviro: !Select [0, !Split [".", !Ref DomainName]] }
+      Tags:
+        - Key: StackName
+          Value: UserStack
+        - Key: ParentStackName
+          Value: !Ref "AWS::StackName"
+
+Outputs:
+  IdentityPoolID:
+    Value:
+      Fn::ImportValue: !Sub
+        - "${Enviro}-cognitoIdentityPoolID"
+        - { Enviro: !Select [0, !Split [".", !Ref DomainName]] }
+  IdentityProviderID:
+    Value:
+      Fn::ImportValue: !Sub
+        - "${Enviro}-cognitoIdentityProviderID"
+        - { Enviro: !Select [0, !Split [".", !Ref DomainName]] }
+
+  NormalClientID:
+    Value:
+      Fn::ImportValue: !Sub
+        - "${Enviro}-cognitoNormalClientID"
+        - { Enviro: !Select [0, !Split [".", !Ref DomainName]] }
+  AuthRoleArn:
+    Value:
+      Fn::ImportValue: !Sub
+        - "${Enviro}-cognitoAuthRoleArn"
+        - { Enviro: !Select [0, !Split [".", !Ref DomainName]] }
+  UnAuthRoleArn:
+    Value:
+      Fn::ImportValue: !Sub
+        - "${Enviro}-cognitoUnAuthRoleArn"
+        - { Enviro: !Select [0, !Split [".", !Ref DomainName]] }
+  AdminRoleArn:
+    Value: !GetAtt AdminRole.Arn
+  CCRoleArn:
+    Value: !GetAtt CCRole.Arn
+  AppRoleArn:
+    Value: !GetAtt AppRole.Arn
+  Host:
+    Value: !GetAtt ReportingStack.Outputs.ClusterEndpointAddress
+    Export:
+      Name: !Sub "${AWS::StackName}Host"
+  Name:
+    Value: !Ref MySQLDatabaseName
+    Export:
+      Name: !Sub "${AWS::StackName}Name"
+  EnableWebSockets:
+    Value: !If [EnableWebSockets, "true", "false"]
+  EnableDelivery:
+    Value: !If [EnableDelivery, "true", "false"]
